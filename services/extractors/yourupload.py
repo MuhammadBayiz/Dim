@@ -1,5 +1,6 @@
 import aiohttp
 from bs4 import BeautifulSoup
+import ssl
 
 async def extract(url: str) -> tuple[str | None, dict, str | None]:
     """
@@ -16,9 +17,12 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
         "Referer": "https://www.yourupload.com/"
     }
 
+    # Disable SSL verification
+    ssl_context = False
+
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
+            async with session.get(url, headers=headers, ssl=ssl_context) as response:
                 if response.status != 200:
                     print(f"YourUpload: Failed to fetch page. Status: {response.status}")
                     return None, {}, None

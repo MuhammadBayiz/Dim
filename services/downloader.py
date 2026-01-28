@@ -4,7 +4,6 @@ import time
 import logging
 import math
 import ssl
-import certifi
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -35,8 +34,8 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
     logger.info(f"Starting download: {url} -> {filename}")
     start_time = time.time()
     
-    # Create robust SSL context
-    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    # Disable SSL verification for shared hosting compatibility
+    ssl_context = False
     
     try:
         timeout = aiohttp.ClientTimeout(total=None, connect=60, sock_read=300)

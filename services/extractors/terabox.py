@@ -3,7 +3,6 @@ import re
 import config
 import asyncio
 import ssl
-import certifi
 
 async def extract(url: str) -> tuple[str | None, dict, str | None]:
     """
@@ -21,8 +20,8 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
         "Accept": "application/json, text/plain, */*",
     }
     
-    # Create a robust SSL context using certifi
-    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    # Disable SSL verification for shared hosting compatibility
+    ssl_context = False
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -30,7 +29,6 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
             print(f"Terabox: Resolving URL to find filename: {url}")
             target_filename = None
             
-            # Use the custom SSL context here
             async with session.get(url, headers=headers, ssl=ssl_context) as response:
                 html = await response.text()
                 title_match = re.search(r'<title>(.*?)</title>', html)

@@ -23,20 +23,33 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
     
     # Force IPv4 and Disable SSL verification
     connector = aiohttp.TCPConnector(family=socket.AF_INET, ssl=False)
+    
+    # Custom timeout for slow connections
+    timeout = aiohttp.ClientTimeout(total=60, connect=30, sock_read=30)
 
     try:
-        async with aiohttp.ClientSession(connector=connector) as session:
-            # 1. Get filename
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            # 1. Get filename (with retries)
             print(f"Terabox: Resolving URL to find filename: {url}")
             target_filename = None
             
-            async with session.get(url, headers=headers, ssl=False) as response:
-                html = await response.text()
-                title_match = re.search(r'<title>(.*?)</title>', html)
-                if title_match:
-                    target_filename = title_match.group(1).split(" - ")[0].strip()
-
+            for attempt in range(3):
+                try:
+                    async with session.get(url, headers=headers, ssl=False) as response:
+                        if response.status == 200:
+                            html = await response.text()
+                            title_match = re.search(r'<title>(.*?)</title>', html)
+                            if title_match:
+                                target_filename = title_match.group(1).split(" - ")[0].strip()
+                                break # Success
+                        else:
+                            print(f"Terabox: URL resolution failed with status {response.status} (Attempt {attempt+1}/3)")
+                except Exception as e:
+                    print(f"Terabox: URL resolution error: {e} (Attempt {attempt+1}/3)")
+                    await asyncio.sleep(2) # Wait before retry
+            
             if not target_filename:
+                print("Terabox: Failed to resolve filename after retries.")
                 return None, {}, None
 
             # 2. Recursive Search

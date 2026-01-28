@@ -33,6 +33,8 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
         url
     ]
 
+    # Add headers (Cookies, User-Agent, Referer)
+    logger.info(f"Passing Headers to aria2c: {headers}")
     for k, v in headers.items():
         cmd.extend(["--header", f"{k}: {v}"])
 
@@ -62,7 +64,7 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
                 continue
 
             # DEBUG: Print raw line to see what aria2c is outputting
-            # logger.info(f"RAW ARIA2: {line}") 
+            logger.info(f"RAW ARIA2: {line}") 
 
             match = status_pattern.search(line)
             if match and progress_callback:

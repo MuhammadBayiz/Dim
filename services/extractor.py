@@ -14,7 +14,9 @@ async def extract_direct_url(url: str) -> tuple[str | None, dict, str | None]:
         return await yourupload.extract(url)
     
     if "terabox" in url or "1024tera" in url or "teraboxlink" in url:
-        return await terabox.extract(url)
+        direct_url, headers, filename = await terabox.extract(url)
+        print(f"DEBUG: Extractor returned headers: {headers}")
+        return direct_url, headers, filename
     
     # Placeholder for future extractors
     return None, {}, None

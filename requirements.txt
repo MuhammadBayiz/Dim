@@ -1,0 +1,7 @@
+pyrogram
+tgcrypto
+aiohttp
+python-dotenv
+beautifulsoup4
+lxml
+

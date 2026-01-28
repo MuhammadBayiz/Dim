@@ -1,0 +1,20 @@
+# Environments
+.env
+venv/
+__pycache__/
+*.pyc
+
+# Logs
+*.log
+
+# Userbot Session
+*.session
+*.session-journal
+
+# Downloads (if inside project)
+downloads/
+files/
+
+# IDE
+.vscode/
+.idea/

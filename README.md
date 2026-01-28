@@ -29,11 +29,13 @@ Dim Bot is a high-performance Telegram Userbot designed to extract and download 
     ```ini
     API_ID=your_telegram_api_id
     API_HASH=your_telegram_api_hash
-    SESSION_STRING=your_pyrogram_session_string
+    BOT_TOKEN=your_bot_token_from_botfather
+    OWNER_ID=your_telegram_user_id
     TERABOX_NDUS=your_terabox_cookie_value
     ```
     *   **API_ID/HASH**: Get from [my.telegram.org](https://my.telegram.org).
-    *   **SESSION_STRING**: Generate using Pyrogram (script not included, use standard generation tools).
+    *   **BOT_TOKEN**: Create a bot via [@BotFather](https://t.me/BotFather).
+    *   **OWNER_ID**: Get your numerical ID from [@userinfobot](https://t.me/userinfobot).
     *   **TERABOX_NDUS**: Log in to Terabox web, open DevTools -> Application -> Cookies, copy the `ndus` value.
 
 4.  **Run the Bot**

@@ -13,16 +13,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize the Userbot
-if not config.SESSION_STRING:
-    logger.error("SESSION_STRING is missing. Please generate a Pyrogram session string.")
+# Initialize the Bot
+if not config.BOT_TOKEN:
+    logger.error("BOT_TOKEN is missing. Please add it to .env")
     exit(1)
 
 app = Client(
-    "dim_userbot",
+    "dim_bot",
     api_id=config.API_ID,
     api_hash=config.API_HASH,
-    session_string=config.SESSION_STRING
+    bot_token=config.BOT_TOKEN
 )
 
 def get_progress_bar(current, total):
@@ -102,7 +102,7 @@ async def process_upload_task(client, message, url):
         if 'output_path' in locals() and os.path.exists(output_path):
             os.remove(output_path)
 
-@app.on_message(filters.command("upload", prefixes="/") & filters.me)
+@app.on_message(filters.command("upload", prefixes="/") & filters.user(config.OWNER_ID))
 async def upload_handler(client, message):
     if len(message.command) < 2:
         await message.reply_text("Usage: /upload <url>")

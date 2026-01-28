@@ -3,6 +3,7 @@ import logging
 import asyncio
 import re
 import math
+import time
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
         status_pattern = re.compile(r"([\d\.]+[KMG]?i?B)/([\d\.]+[KMG]?i?B)\((\d+)%\).*?DL:([\d\.]+[KMG]?i?B)/s.*?ETA:([a-zA-Z0-9:]+)")
 
         last_percent = -1
+        last_update_time = 0
 
         while True:
             line_bytes = await process.stdout.readline()
@@ -91,7 +93,9 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
                 speed = match.group(4)
                 eta = match.group(5)
 
-                if percent != last_percent:
+                current_time = time.time()
+                # Update if percent changed OR if 5 seconds passed
+                if percent != last_percent or (current_time - last_update_time >= 5):
                     try:
                         await progress_callback(
                             percent,   
@@ -100,6 +104,7 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
                             eta
                         )
                         last_percent = percent
+                        last_update_time = current_time
                     except Exception as e:
                         logger.error(f"Callback error: {e}")
 

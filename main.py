@@ -63,25 +63,30 @@ async def process_upload_task(client, message, url):
         # 3. Download with Progress
         async def progress(current, total, speed, eta):
             try:
-                # Format: 
-                # ⬇️ Downloading...
-                # ▓▓▓▓░░░░░░ 45.0%
-                # 📦 Size: 50MB / 120MB
-                # 🚀 Speed: 5.2 MB/s
-                # ⏳ ETA: 1m 30s
+                # If total is 100, it means aria2c sent us a percentage directly
+                if total == 100:
+                    percentage = current
+                    filled_length = int(percentage // 10)
+                    bar = '▓' * filled_length + '░' * (10 - filled_length)
+                    text = (
+                        f"⬇️ **Downloading (aria2c)**\n"
+                        f"{bar} {percentage}%\n"
+                        f"🚀 {speed} | ⏳ {eta}"
+                    )
+                else:
+                    # Legacy fallback (aiohttp)
+                    total_str = downloader.format_size(total) if total > 0 else "?"
+                    current_str = downloader.format_size(current)
+                    text = (
+                        f"⬇️ **Downloading...**\n"
+                        f"{get_progress_bar(current, total)}\n"
+                        f"📦 {current_str} / {total_str}\n"
+                        f"🚀 {speed} | ⏳ {eta}"
+                    )
                 
-                total_str = downloader.format_size(total) if total > 0 else "?"
-                current_str = downloader.format_size(current)
-                
-                text = (
-                    f"⬇️ **Downloading...**\n"
-                    f"{get_progress_bar(current, total)}\n"
-                    f"📦 {current_str} / {total_str}\n"
-                    f"🚀 {speed} | ⏳ {eta}"
-                )
                 await status_msg.edit_text(text)
             except Exception:
-                pass # Ignore edit errors (flood wait etc)
+                pass # Ignore edit errors
 
         result_path = await downloader.download_file(direct_url, headers, output_path, progress_callback=progress)
 

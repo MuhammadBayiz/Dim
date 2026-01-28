@@ -1,105 +1,103 @@
-import aiohttp
 import os
-import time
 import logging
-import math
-import ssl
-import socket
 import asyncio
+import re
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
-def format_size(size_bytes):
-    if size_bytes == 0:
-        return "0B"
-    size_name = ("B", "KB", "MB", "GB", "TB")
-    i = int(math.floor(math.log(size_bytes, 1024)))
-    p = math.pow(1024, i)
-    s = round(size_bytes / p, 2)
-    return "%s %s" % (s, size_name[i])
-
-def format_time(seconds):
-    if seconds < 60:
-        return f"{int(seconds)}s"
-    minutes = int(seconds / 60)
-    seconds = int(seconds % 60)
-    return f"{minutes}m {seconds}s"
-
 async def download_file(url: str, headers: dict, filename: str, progress_callback=None) -> str | None:
     """
-    Downloads a file with optimized I/O and progress reporting.
+    Downloads a file using aria2c for maximum speed (multi-connection).
+    Parses aria2c console output for progress updates.
     """
-    logger.info(f"Starting download: {url} -> {filename}")
-    start_time = time.time()
+    logger.info(f"Starting aria2c download: {url} -> {filename}")
     
-    # 1. Setup Networking
-    # Force IPv4, Disable SSL, Enable KeepAlive, and increase limit
-    connector = aiohttp.TCPConnector(
-        family=socket.AF_INET, 
-        ssl=False,
-        keepalive_timeout=60,
-        limit=0 # Unlimited connections
-    )
-    
-    # 2. Setup I/O
-    # 8MB Chunks for better throughput on high-speed links
-    CHUNK_SIZE = 8 * 1024 * 1024 
-    
+    # Ensure directory exists
+    output_dir = os.path.dirname(filename)
+    output_file = os.path.basename(filename)
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Build aria2c command
+    cmd = [
+        "aria2c",
+        "--file-allocation=none",
+        "-x", "16",       # Max connections per server
+        "-s", "16",       # Split file into 16 parts
+        "-j", "16",       # Max concurrent downloads
+        "-k", "1M",       # Min split size
+        "--check-certificate=false", # Disable SSL verify (Host compatibility)
+        "--summary-interval=2",      # Status update interval (seconds)
+        "-d", output_dir,
+        "-o", output_file,
+        url
+    ]
+
+    # Add headers (Cookies, User-Agent, Referer)
+    # aria2c takes headers as: --header "Name: Value"
+    for k, v in headers.items():
+        cmd.extend(["--header", f"{k}: {v}"])
+
     try:
-        # Increase connection timeouts significantly
-        timeout = aiohttp.ClientTimeout(total=None, connect=60, sock_read=600)
-        
-        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-            async with session.get(url, headers=headers, ssl=False) as response:
-                if response.status not in [200, 206]:
-                    logger.error(f"Download failed. Status: {response.status}")
-                    return None
-                
-                total_size = int(response.headers.get('Content-Length', 0))
-                downloaded_size = 0
-                last_update_time = time.time()
-                
-                os.makedirs(os.path.dirname(filename), exist_ok=True)
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
 
-                # Get the running loop for thread execution
-                loop = asyncio.get_running_loop()
+        # Regex to parse aria2c status line:
+        # [#2089b0 25MiB/1.5GiB(1%) CN:8 DL:3.2MiB/s ETA:7m50s]
+        # Groups: 1=Downloaded, 2=Total, 3=Percent, 4=Speed, 5=ETA
+        status_pattern = re.compile(r"\[.*?(\d+\.?\d*[KMGT]?i?B)/(\d+\.?\d*[KMGT]?i?B)\((\d+)%\).*?DL:(\d+\.?\d*[KMGT]?i?B)/s.*?ETA:([a-zA-Z0-9]+)\]")
 
-                # Open file in binary write mode
-                with open(filename, 'wb') as f:
-                    async for chunk in response.content.iter_chunked(CHUNK_SIZE):
-                        if not chunk:
-                            break
-                        
-                        # Write to disk in a separate thread to avoid blocking the event loop
-                        # This is crucial for high-speed downloads in Python async
-                        await loop.run_in_executor(None, f.write, chunk)
-                        
-                        downloaded_size += len(chunk)
-                        
-                        # Progress Update (throttled)
-                        current_time = time.time()
-                        if progress_callback and (current_time - last_update_time > 2 or downloaded_size == total_size):
-                            elapsed = current_time - start_time
-                            speed = downloaded_size / elapsed if elapsed > 0 else 0
-                            
-                            eta = 0
-                            if speed > 0 and total_size > 0:
-                                eta = (total_size - downloaded_size) / speed
-                                
-                            await progress_callback(
-                                downloaded_size, 
-                                total_size, 
-                                format_size(speed) + "/s", 
-                                format_time(eta)
-                            )
-                            last_update_time = current_time
+        last_percent = -1
 
-        logger.info(f"Download complete: {filename}")
-        return filename
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            
+            line_str = line.decode().strip()
+            
+            # Log output for debug (optional, can be noisy)
+            # logger.info(f"aria2c: {line_str}")
+
+            match = status_pattern.search(line_str)
+            if match and progress_callback:
+                downloaded_str = match.group(1)
+                total_str = match.group(2)
+                percent = int(match.group(3))
+                speed = match.group(4)
+                eta = match.group(5)
+
+                # Only update Telegram if percentage changed to avoid flood
+                if percent != last_percent:
+                    # Convert strings to simpler format if needed, but strings are fine for display
+                    # We pass dummy integers for current/total because formatting is already done by aria2
+                    # The callback in main.py expects (current, total, speed, eta)
+                    # We will pass the strings directly and handle them in main.py or adapt here.
+                    
+                    # NOTE: main.py expects integers for the progress bar calculation.
+                    # We can pass `percent` as current and `100` as total to simplify.
+                    
+                    await progress_callback(
+                        percent,   # current (as percentage)
+                        100,       # total (as percentage base)
+                        speed + "/s", 
+                        eta
+                    )
+                    last_percent = percent
+
+        await process.wait()
+
+        if process.returncode == 0:
+            logger.info(f"aria2c download complete: {filename}")
+            return filename
+        else:
+            stderr = await process.stderr.read()
+            logger.error(f"aria2c failed with code {process.returncode}: {stderr.decode()}")
+            return None
 
     except Exception as e:
-        logger.error(f"Error during download of {filename}: {e}")
-        if os.path.exists(filename):
-            os.remove(filename)
+        logger.error(f"Error during aria2c download: {e}")
         return None

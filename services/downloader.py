@@ -42,7 +42,7 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
         timeout = aiohttp.ClientTimeout(total=None, connect=60, sock_read=300)
         
         async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-            async with session.get(url, headers=headers) as response:
+            async with session.get(url, headers=headers, ssl=False) as response:
                 if response.status not in [200, 206]:
                     logger.error(f"Download failed. Status: {response.status}")
                     return None

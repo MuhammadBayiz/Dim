@@ -23,7 +23,7 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
 
     try:
         async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.get(url, headers=headers) as response:
+            async with session.get(url, headers=headers, ssl=False) as response:
                 if response.status != 200:
                     print(f"YourUpload: Failed to fetch page. Status: {response.status}")
                     return None, {}, None

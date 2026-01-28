@@ -30,7 +30,7 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
             print(f"Terabox: Resolving URL to find filename: {url}")
             target_filename = None
             
-            async with session.get(url, headers=headers) as response:
+            async with session.get(url, headers=headers, ssl=False) as response:
                 html = await response.text()
                 title_match = re.search(r'<title>(.*?)</title>', html)
                 if title_match:
@@ -60,7 +60,7 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
                     "num": "1000"
                 }
 
-                async with session.get(list_url, params=params, headers=headers) as resp:
+                async with session.get(list_url, params=params, headers=headers, ssl=False) as resp:
                     data = await resp.json()
                     if data.get("errno") != 0: continue 
 
@@ -83,7 +83,7 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
                                     "app_id": "250528"
                                 }
                                 
-                                async with session.get(pcs_url, params=pcs_params, headers=headers, allow_redirects=False) as pcs_resp:
+                                async with session.get(pcs_url, params=pcs_params, headers=headers, allow_redirects=False, ssl=False) as pcs_resp:
                                     if pcs_resp.status in [302, 301, 307]:
                                         redirect_url = pcs_resp.headers.get("Location")
                                         return redirect_url, headers, target_filename

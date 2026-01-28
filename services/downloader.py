@@ -2,9 +2,26 @@ import os
 import logging
 import asyncio
 import re
+import math
 
 # Configure logger
 logger = logging.getLogger(__name__)
+
+def format_size(size_bytes):
+    if size_bytes == 0:
+        return "0B"
+    size_name = ("B", "KB", "MB", "GB", "TB")
+    i = int(math.floor(math.log(size_bytes, 1024)))
+    p = math.pow(1024, i)
+    s = round(size_bytes / p, 2)
+    return "%s %s" % (s, size_name[i])
+
+def format_time(seconds):
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    minutes = int(seconds / 60)
+    seconds = int(seconds % 60)
+    return f"{minutes}m {seconds}s"
 
 async def download_file(url: str, headers: dict, filename: str, progress_callback=None) -> str | None:
     """

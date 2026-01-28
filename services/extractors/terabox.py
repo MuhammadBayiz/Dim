@@ -3,6 +3,7 @@ import re
 import config
 import asyncio
 import ssl
+import socket
 
 async def extract(url: str) -> tuple[str | None, dict, str | None]:
     """
@@ -20,16 +21,16 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
         "Accept": "application/json, text/plain, */*",
     }
     
-    # Disable SSL verification for shared hosting compatibility
-    ssl_context = False
+    # Force IPv4 and Disable SSL verification
+    connector = aiohttp.TCPConnector(family=socket.AF_INET, ssl=False)
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(connector=connector) as session:
             # 1. Get filename
             print(f"Terabox: Resolving URL to find filename: {url}")
             target_filename = None
             
-            async with session.get(url, headers=headers, ssl=ssl_context) as response:
+            async with session.get(url, headers=headers) as response:
                 html = await response.text()
                 title_match = re.search(r'<title>(.*?)</title>', html)
                 if title_match:
@@ -59,7 +60,7 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
                     "num": "1000"
                 }
 
-                async with session.get(list_url, params=params, headers=headers, ssl=ssl_context) as resp:
+                async with session.get(list_url, params=params, headers=headers) as resp:
                     data = await resp.json()
                     if data.get("errno") != 0: continue 
 
@@ -82,7 +83,7 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
                                     "app_id": "250528"
                                 }
                                 
-                                async with session.get(pcs_url, params=pcs_params, headers=headers, allow_redirects=False, ssl=ssl_context) as pcs_resp:
+                                async with session.get(pcs_url, params=pcs_params, headers=headers, allow_redirects=False) as pcs_resp:
                                     if pcs_resp.status in [302, 301, 307]:
                                         redirect_url = pcs_resp.headers.get("Location")
                                         return redirect_url, headers, target_filename

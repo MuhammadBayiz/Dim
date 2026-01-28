@@ -4,6 +4,7 @@ import time
 import logging
 import math
 import ssl
+import socket
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -34,14 +35,14 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
     logger.info(f"Starting download: {url} -> {filename}")
     start_time = time.time()
     
-    # Disable SSL verification for shared hosting compatibility
-    ssl_context = False
+    # Force IPv4 and Disable SSL verification
+    connector = aiohttp.TCPConnector(family=socket.AF_INET, ssl=False)
     
     try:
         timeout = aiohttp.ClientTimeout(total=None, connect=60, sock_read=300)
         
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers, ssl=ssl_context) as response:
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+            async with session.get(url, headers=headers) as response:
                 if response.status not in [200, 206]:
                     logger.error(f"Download failed. Status: {response.status}")
                     return None

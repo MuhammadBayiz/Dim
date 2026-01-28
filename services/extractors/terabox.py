@@ -2,10 +2,13 @@ import aiohttp
 import re
 import config
 import asyncio
+import ssl
+import certifi
 
 async def extract(url: str) -> tuple[str | None, dict]:
     """
-    Extracts Terabox download link using the PCS (Private Cloud Storage) API.
+    Extracts Terabox download link by RECURSIVELY searching for the file in the user's OWN account,
+    then resolving the dlink using fs_id.
     """
     if not config.TERABOX_NDUS:
         print("Error: TERABOX_NDUS cookie not found in .env")
@@ -17,13 +20,18 @@ async def extract(url: str) -> tuple[str | None, dict]:
         "Referer": "https://www.terabox.com/main",
         "Accept": "application/json, text/plain, */*",
     }
+    
+    # Create a robust SSL context using certifi
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
 
     try:
         async with aiohttp.ClientSession() as session:
             # 1. Get filename
             print(f"Terabox: Resolving URL to find filename: {url}")
             target_filename = None
-            async with session.get(url, headers=headers) as response:
+            
+            # Use the custom SSL context here
+            async with session.get(url, headers=headers, ssl=ssl_context) as response:
                 html = await response.text()
                 title_match = re.search(r'<title>(.*?)</title>', html)
                 if title_match:
@@ -53,7 +61,7 @@ async def extract(url: str) -> tuple[str | None, dict]:
                     "num": "1000"
                 }
 
-                async with session.get(list_url, params=params, headers=headers) as resp:
+                async with session.get(list_url, params=params, headers=headers, ssl=ssl_context) as resp:
                     data = await resp.json()
                     if data.get("errno") != 0: continue 
 
@@ -69,7 +77,6 @@ async def extract(url: str) -> tuple[str | None, dict]:
                                 print(f"Terabox: Match found at path: {path}")
                                 
                                 # 3. Generate Link using PCS API
-                                # This is the direct API for file operations
                                 pcs_url = "https://www.terabox.com/rest/2.0/pcs/file"
                                 pcs_params = {
                                     "method": "download",
@@ -77,16 +84,11 @@ async def extract(url: str) -> tuple[str | None, dict]:
                                     "app_id": "250528"
                                 }
                                 
-                                # Note: This usually returns the binary stream directly OR a redirect.
-                                # We check if it gives us a usable URL.
-                                async with session.get(pcs_url, params=pcs_params, headers=headers, allow_redirects=False) as pcs_resp:
+                                async with session.get(pcs_url, params=pcs_params, headers=headers, allow_redirects=False, ssl=ssl_context) as pcs_resp:
                                     if pcs_resp.status in [302, 301, 307]:
                                         redirect_url = pcs_resp.headers.get("Location")
                                         return redirect_url, headers
                                     elif pcs_resp.status == 200:
-                                        # If it returns 200, it might be the file content itself.
-                                        # In that case, we can return the constructed URL as the "Direct Link"
-                                        # But we need to ensure the downloader uses the same params.
                                         constructed_url = str(pcs_resp.url)
                                         return constructed_url, headers
                                 

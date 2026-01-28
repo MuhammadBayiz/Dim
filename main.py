@@ -42,19 +42,22 @@ async def process_upload_task(client, message, url):
     try:
         # 1. Extract
         await status_msg.edit_text(f"🔍 Extracting URL...\n{url}")
-        direct_url, headers = await extractor.extract_direct_url(url)
+        direct_url, headers, filename = await extractor.extract_direct_url(url)
         
         if not direct_url:
             await status_msg.edit_text(f"❌ Extraction failed for: {url}")
             return
 
         # 2. Setup Filename
-        timestamp = int(time.time())
-        ext = ".mp4" # Default
-        if ".mkv" in direct_url: ext = ".mkv"
-        if ".avi" in direct_url: ext = ".avi"
+        if not filename:
+            timestamp = int(time.time())
+            ext = ".mp4" # Default
+            if ".mkv" in direct_url: ext = ".mkv"
+            if ".avi" in direct_url: ext = ".avi"
+            filename = f"video_{timestamp}_{message.id}{ext}"
         
-        filename = f"video_{timestamp}_{message.id}{ext}"
+        # Ensure filename is safe for filesystem
+        filename = "".join([c for c in filename if c.isalnum() or c in "._- "]).strip()
         output_path = os.path.join(config.DOWNLOAD_PATH, filename)
         
         # 3. Download with Progress

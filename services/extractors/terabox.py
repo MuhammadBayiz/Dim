@@ -5,14 +5,14 @@ import asyncio
 import ssl
 import certifi
 
-async def extract(url: str) -> tuple[str | None, dict]:
+async def extract(url: str) -> tuple[str | None, dict, str | None]:
     """
     Extracts Terabox download link by RECURSIVELY searching for the file in the user's OWN account,
     then resolving the dlink using fs_id.
     """
     if not config.TERABOX_NDUS:
         print("Error: TERABOX_NDUS cookie not found in .env")
-        return None, {}
+        return None, {}, None
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
@@ -38,7 +38,7 @@ async def extract(url: str) -> tuple[str | None, dict]:
                     target_filename = title_match.group(1).split(" - ")[0].strip()
 
             if not target_filename:
-                return None, {}
+                return None, {}, None
 
             # 2. Recursive Search
             queue = ["/"]
@@ -87,13 +87,13 @@ async def extract(url: str) -> tuple[str | None, dict]:
                                 async with session.get(pcs_url, params=pcs_params, headers=headers, allow_redirects=False, ssl=ssl_context) as pcs_resp:
                                     if pcs_resp.status in [302, 301, 307]:
                                         redirect_url = pcs_resp.headers.get("Location")
-                                        return redirect_url, headers
+                                        return redirect_url, headers, target_filename
                                     elif pcs_resp.status == 200:
                                         constructed_url = str(pcs_resp.url)
-                                        return constructed_url, headers
+                                        return constructed_url, headers, target_filename
                                 
                                 print("Terabox: PCS API did not return a redirect.")
-                                return None, {}
+                                return None, {}, None
 
                         elif is_dir == "1":
                             folder_path = file.get("path")
@@ -103,8 +103,8 @@ async def extract(url: str) -> tuple[str | None, dict]:
                 await asyncio.sleep(0.1)
 
             print("Terabox: File not found.")
-            return None, {}
+            return None, {}, None
 
     except Exception as e:
         print(f"Terabox Extraction Error: {e}")
-        return None, {}
+        return None, {}, None

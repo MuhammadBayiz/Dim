@@ -1,6 +1,6 @@
 from services.extractors import yourupload, terabox
 
-async def extract_direct_url(url: str) -> tuple[str | None, dict]:
+async def extract_direct_url(url: str) -> tuple[str | None, dict, str | None]:
     """
     Main entry point for URL extraction. Routes to specific extractors.
     
@@ -8,13 +8,13 @@ async def extract_direct_url(url: str) -> tuple[str | None, dict]:
         url (str): The input URL (e.g., yourupload, terabox).
         
     Returns:
-        tuple: (direct_stream_url, headers_dict)
+        tuple: (direct_stream_url, headers_dict, filename)
     """
     if "yourupload.com" in url:
         return await yourupload.extract(url)
     
-    if "terabox" in url or "1024tera" in url:
+    if "terabox" in url or "1024tera" in url or "teraboxlink" in url:
         return await terabox.extract(url)
     
     # Placeholder for future extractors
-    return None, {}
+    return None, {}, None

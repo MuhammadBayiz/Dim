@@ -4,7 +4,7 @@ import logging
 import time
 from pyrogram import Client, filters
 import config
-from services import extractor, downloader, uploader
+from services import extractor, downloader, uploader, auth
 
 # Configure logging
 logging.basicConfig(
@@ -129,8 +129,61 @@ async def process_upload_task(client, message, url):
         if 'output_path' in locals() and os.path.exists(output_path):
             os.remove(output_path)
 
-@app.on_message(filters.command("upload", prefixes="/") & filters.user(config.OWNER_ID))
+# --- Admin Commands ---
+
+def is_owner(user_id):
+    return user_id == config.OWNER_ID or str(user_id) == str(config.OWNER_ID)
+
+@app.on_message(filters.command("adduser", prefixes="/"))
+async def add_user_handler(client, message):
+    if not is_owner(message.from_user.id):
+        return
+    
+    if len(message.command) < 2:
+        await message.reply_text("Usage: /adduser <id or username>")
+        return
+    
+    identifier = message.command[1]
+    if auth.add_user(identifier):
+        await message.reply_text(f"✅ User {identifier} added.")
+    else:
+        await message.reply_text(f"⚠️ User {identifier} already exists.")
+
+@app.on_message(filters.command("removeuser", prefixes="/"))
+async def remove_user_handler(client, message):
+    if not is_owner(message.from_user.id):
+        return
+    
+    if len(message.command) < 2:
+        await message.reply_text("Usage: /removeuser <id or username>")
+        return
+    
+    identifier = message.command[1]
+    if auth.remove_user(identifier):
+        await message.reply_text(f"✅ User {identifier} removed.")
+    else:
+        await message.reply_text(f"⚠️ User {identifier} not found.")
+
+@app.on_message(filters.command("listusers", prefixes="/"))
+async def list_users_handler(client, message):
+    if not is_owner(message.from_user.id):
+        return
+    
+    users = auth.get_users()
+    if not users:
+        await message.reply_text("📂 No allowed users.")
+    else:
+        await message.reply_text(f"📂 Allowed Users:\n" + "\n".join([f"- `{u}`" for u in users]))
+
+# --- Upload Handler ---
+
+@app.on_message(filters.command("upload", prefixes="/"))
 async def upload_handler(client, message):
+    user = message.from_user
+    if not auth.is_authorized(user.id, user.username):
+        await message.reply_text("⛔ You are not authorized to use this bot.")
+        return
+
     if len(message.command) < 2:
         await message.reply_text("Usage: /upload <url>")
         return

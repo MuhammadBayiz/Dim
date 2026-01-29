@@ -110,10 +110,10 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
                                 async with session.get(pcs_url, params=pcs_params, headers=headers, allow_redirects=False, ssl=False) as pcs_resp:
                                     if pcs_resp.status in [302, 301, 307]:
                                         redirect_url = pcs_resp.headers.get("Location")
-                                        return redirect_url, headers, target_filename
+                                        return redirect_url, headers, server_filename
                                     elif pcs_resp.status == 200:
                                         constructed_url = str(pcs_resp.url)
-                                        return constructed_url, headers, target_filename
+                                        return constructed_url, headers, server_filename
                                 
                                 print("Terabox: PCS API did not return a redirect.")
                                 return None, {}, None

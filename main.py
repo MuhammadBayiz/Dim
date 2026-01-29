@@ -4,7 +4,7 @@ import logging
 import time
 from pyrogram import Client, filters
 import config
-from services import extractor, downloader
+from services import extractor, downloader, uploader
 
 # Configure logging
 logging.basicConfig(
@@ -48,14 +48,18 @@ async def process_upload_task(client, message, url):
             await status_msg.edit_text(f"❌ Extraction failed for: {url}")
             return
 
-        # 2. Setup Filename
+        # 2. Setup Filename & Extension
         if not filename:
             timestamp = int(time.time())
-            ext = ".mp4" # Default
-            if ".mkv" in direct_url: ext = ".mkv"
-            if ".avi" in direct_url: ext = ".avi"
-            filename = f"video_{timestamp}_{message.id}{ext}"
+            filename = f"video_{timestamp}_{message.id}"
         
+        # Ensure extension exists
+        if "." not in filename:
+            # Try to guess from URL or default to mp4
+            if ".mkv" in direct_url: filename += ".mkv"
+            elif ".avi" in direct_url: filename += ".avi"
+            else: filename += ".mp4"
+            
         # Ensure filename is safe for filesystem
         filename = "".join([c for c in filename if c.isalnum() or c in "._- "]).strip()
         output_path = os.path.join(config.DOWNLOAD_PATH, filename)
@@ -74,7 +78,7 @@ async def process_upload_task(client, message, url):
                         f"🚀 {speed} | ⏳ {eta}"
                     )
                 else:
-                    # Legacy fallback (aiohttp)
+                    # Legacy fallback
                     total_str = downloader.format_size(total) if total > 0 else "?"
                     current_str = downloader.format_size(current)
                     text = (
@@ -94,15 +98,27 @@ async def process_upload_task(client, message, url):
             await status_msg.edit_text("❌ Download failed.")
             return
 
-        # 4. Final Success Message
+        # 4. Final Success Message & API Notification
         file_size = os.path.getsize(result_path)
         size_str = downloader.format_size(file_size)
         
         await status_msg.edit_text(
             f"✅ **Download Complete!**\n\n"
             f"📂 Saved to: `{result_path}`\n"
-            f"📦 Size: {size_str}"
+            f"📦 Size: {size_str}\n\n"
+            f"📡 Notifying API..."
         )
+        
+        # Call API
+        api_success = await uploader.notify_api(filename, result_path)
+        
+        status_text = (
+            f"✅ **Task Completed**\n\n"
+            f"📂 File: `{filename}`\n"
+            f"📦 Size: {size_str}\n"
+            f"📡 API: {'✅ Sent' if api_success else '❌ Failed'}"
+        )
+        await status_msg.edit_text(status_text)
 
     except Exception as e:
         logger.error(f"Task failed: {e}")

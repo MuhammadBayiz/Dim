@@ -83,7 +83,7 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
                 continue
 
             # DEBUG: Print raw line to see what aria2c is outputting
-            logger.info(f"RAW ARIA2: {line}") 
+            # logger.info(f"RAW ARIA2: {line}") 
 
             match = status_pattern.search(line)
             if match and progress_callback:

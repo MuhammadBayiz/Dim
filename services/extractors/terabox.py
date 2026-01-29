@@ -70,69 +70,81 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
                 current_path = queue.pop(0)
                 checked_folders += 1
                 
-                list_url = "https://www.terabox.com/api/list"
-                params = {
-                    "dir": current_path,
-                    "web": "1",
-                    "root": "1",
-                    "order": "time",
-                    "desc": "1",
-                    "num": "1000"
-                }
+                # Pagination Loop
+                page = 1
+                while True:
+                    list_url = "https://www.terabox.com/api/list"
+                    params = {
+                        "dir": current_path,
+                        "web": "1",
+                        "root": "1",
+                        "order": "time",
+                        "desc": "1",
+                        "num": "1000",
+                        "page": str(page)
+                    }
 
-                async with session.get(list_url, params=params, headers=headers, ssl=False) as resp:
-                    data = await resp.json()
-                    if data.get("errno") != 0: continue 
+                    async with session.get(list_url, params=params, headers=headers, ssl=False) as resp:
+                        data = await resp.json()
+                        if data.get("errno") != 0: 
+                            break # Error or end of list
 
-                    file_list = data.get("list", [])
-                    
-                    for file in file_list:
-                        is_dir = str(file.get("isdir", "0"))
-                        server_filename = file.get("server_filename", "")
+                        file_list = data.get("list", [])
+                        if not file_list:
+                            break # No more files in this folder
 
-                        if is_dir == "0":
-                            # Normalize names for comparison
-                            clean_target = normalize_name(target_filename)
-                            clean_server = normalize_name(server_filename)
-                            
-                            # remove extensions for flexible matching if needed
-                            # but let's try strict normalized matching first
-                            
-                            match = False
-                            if clean_server == clean_target:
-                                match = True
-                            elif clean_target in clean_server:
-                                match = True
-                            
-                            if match:
-                                path = file.get("path")
-                                print(f"Terabox: Match found at path: {path}")
+                        # Process current batch
+                        found_in_batch = False
+                        for file in file_list:
+                            is_dir = str(file.get("isdir", "0"))
+                            server_filename = file.get("server_filename", "")
+
+                            if is_dir == "0":
+                                clean_target = normalize_name(target_filename)
+                                clean_server = normalize_name(server_filename)
                                 
-                                # 3. Generate Link using PCS API
-                                pcs_url = "https://www.terabox.com/rest/2.0/pcs/file"
-                                pcs_params = {
-                                    "method": "download",
-                                    "path": path,
-                                    "app_id": "250528"
-                                }
+                                match = False
+                                if clean_server == clean_target:
+                                    match = True
+                                elif clean_target in clean_server:
+                                    match = True
                                 
-                                async with session.get(pcs_url, params=pcs_params, headers=headers, allow_redirects=False, ssl=False) as pcs_resp:
-                                    if pcs_resp.status in [302, 301, 307]:
-                                        redirect_url = pcs_resp.headers.get("Location")
-                                        return redirect_url, headers, server_filename
-                                    elif pcs_resp.status == 200:
-                                        constructed_url = str(pcs_resp.url)
-                                        return constructed_url, headers, server_filename
-                                
-                                print("Terabox: PCS API did not return a redirect.")
-                                return None, {}, None
+                                if match:
+                                    path = file.get("path")
+                                    print(f"Terabox: Match found at path: {path}")
+                                    
+                                    # 3. Generate Link using PCS API
+                                    pcs_url = "https://www.terabox.com/rest/2.0/pcs/file"
+                                    pcs_params = {
+                                        "method": "download",
+                                        "path": path,
+                                        "app_id": "250528"
+                                    }
+                                    
+                                    async with session.get(pcs_url, params=pcs_params, headers=headers, allow_redirects=False, ssl=False) as pcs_resp:
+                                        if pcs_resp.status in [302, 301, 307]:
+                                            redirect_url = pcs_resp.headers.get("Location")
+                                            return redirect_url, headers, server_filename
+                                        elif pcs_resp.status == 200:
+                                            constructed_url = str(pcs_resp.url)
+                                            return constructed_url, headers, server_filename
+                                    
+                                    print("Terabox: PCS API did not return a redirect.")
+                                    return None, {}, None
 
-                        elif is_dir == "1":
-                            folder_path = file.get("path")
-                            if folder_path and folder_path != current_path:
-                                queue.append(folder_path)
+                            elif is_dir == "1":
+                                folder_path = file.get("path")
+                                if folder_path and folder_path != current_path:
+                                    queue.append(folder_path)
+                        
+                        # Check if we need next page
+                        if len(file_list) < 1000:
+                            break # Less than limit means this is the last page
+                        
+                        page += 1
+                        await asyncio.sleep(0.2) # Throttle between pages
                 
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.1) # Throttle between folders
 
             print("Terabox: File not found.")
             return None, {}, None

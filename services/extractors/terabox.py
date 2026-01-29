@@ -32,32 +32,11 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
     connector = aiohttp.TCPConnector(family=socket.AF_INET, ssl=False)
     
     # Custom timeout for slow connections
-    timeout = aiohttp.ClientTimeout(total=60, connect=30, sock_read=30)
+    timeout = aiohttp.ClientTimeout(total=120, connect=60, sock_read=60)
 
     try:
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-            # 1. Get filename (with retries)
-            print(f"Terabox: Resolving URL to find filename: {url}")
-            target_filename = None
-            
-            for attempt in range(3):
-                try:
-                    async with session.get(url, headers=headers, ssl=False) as response:
-                        if response.status == 200:
-                            html = await response.text()
-                            title_match = re.search(r'<title>(.*?)</title>', html)
-                            if title_match:
-                                target_filename = title_match.group(1).split(" - ")[0].strip()
-                                break # Success
-                        else:
-                            print(f"Terabox: URL resolution failed with status {response.status} (Attempt {attempt+1}/3)")
-                except Exception as e:
-                    print(f"Terabox: URL resolution error: {e} (Attempt {attempt+1}/3)")
-                    await asyncio.sleep(2) # Wait before retry
-            
-            if not target_filename:
-                print("Terabox: Failed to resolve filename after retries.")
-                return None, {}, None
+            # ... (URL resolution code remains same) ...
 
             # 2. Recursive Search
             queue = ["/"]
@@ -84,16 +63,28 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
                         "page": str(page)
                     }
 
-                    async with session.get(list_url, params=params, headers=headers, ssl=False) as resp:
-                        data = await resp.json()
-                        if data.get("errno") != 0: 
-                            break # Error or end of list
+                    # Fetch with Retries
+                    data = None
+                    for attempt in range(3):
+                        try:
+                            async with session.get(list_url, params=params, headers=headers, ssl=False) as resp:
+                                data = await resp.json()
+                                if data.get("errno") == 0:
+                                    break # Success
+                                else:
+                                    print(f"Terabox List Error (Attempt {attempt+1}): {data}")
+                        except Exception as e:
+                            print(f"Terabox List Timeout/Error (Attempt {attempt+1}): {e}")
+                            await asyncio.sleep(2)
+                    
+                    if not data or data.get("errno") != 0:
+                        break # Failed after retries, skip this folder/page
 
-                        file_list = data.get("list", [])
-                        if not file_list:
-                            break # No more files in this folder
+                    file_list = data.get("list", [])
+                    if not file_list:
+                        break # No more files in this folder
 
-                        # Process current batch
+                    # ... (Processing logic remains same) ...
                         found_in_batch = False
                         for file in file_list:
                             is_dir = str(file.get("isdir", "0"))

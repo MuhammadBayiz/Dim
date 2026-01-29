@@ -81,10 +81,21 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
                     
                     for file in file_list:
                         is_dir = str(file.get("isdir", "0"))
-                        server_filename = file.get("server_filename")
+                        server_filename = file.get("server_filename", "")
 
                         if is_dir == "0":
+                            # Improve matching:
+                            # 1. Exact match
+                            # 2. Target contained in Server Filename (e.g. "Movie" in "Movie.mp4")
+                            # 3. Server Filename contained in Target (rare but possible)
+                            
+                            match = False
                             if server_filename == target_filename:
+                                match = True
+                            elif target_filename in server_filename:
+                                match = True
+                            
+                            if match:
                                 path = file.get("path")
                                 print(f"Terabox: Match found at path: {path}")
                                 

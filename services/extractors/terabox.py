@@ -5,6 +5,13 @@ import asyncio
 import ssl
 import socket
 
+def normalize_name(name):
+    if not name: return ""
+    # Normalize quotes (smart quote to straight quote)
+    name = name.replace("’", "'").replace("‘", "'").replace("”", '"').replace("“", '"')
+    # Lowercase and strip
+    return name.lower().strip()
+
 async def extract(url: str) -> tuple[str | None, dict, str | None]:
     """
     Extracts Terabox download link by RECURSIVELY searching for the file in the user's OWN account,
@@ -84,15 +91,17 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
                         server_filename = file.get("server_filename", "")
 
                         if is_dir == "0":
-                            # Improve matching:
-                            # 1. Exact match
-                            # 2. Target contained in Server Filename (e.g. "Movie" in "Movie.mp4")
-                            # 3. Server Filename contained in Target (rare but possible)
+                            # Normalize names for comparison
+                            clean_target = normalize_name(target_filename)
+                            clean_server = normalize_name(server_filename)
+                            
+                            # remove extensions for flexible matching if needed
+                            # but let's try strict normalized matching first
                             
                             match = False
-                            if server_filename == target_filename:
+                            if clean_server == clean_target:
                                 match = True
-                            elif target_filename in server_filename:
+                            elif clean_target in clean_server:
                                 match = True
                             
                             if match:

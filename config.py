@@ -14,6 +14,7 @@ DOWNLOAD_PATH = os.path.expanduser("~/files/output/")
 API_USERNAME = os.getenv("API_USERNAME")
 API_SECRET = os.getenv("API_SECRET")
 API_URL = os.getenv("API_URL")
+ENABLE_API_UPLOAD = os.getenv("ENABLE_API_UPLOAD", "false").lower() == "true"
 
 # Validate required config
 if not all([API_ID, API_HASH, BOT_TOKEN, OWNER_ID]):

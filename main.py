@@ -105,18 +105,21 @@ async def process_upload_task(client, message, url):
         await status_msg.edit_text(
             f"✅ **Download Complete!**\n\n"
             f"📂 Saved to: `{result_path}`\n"
-            f"📦 Size: {size_str}\n\n"
-            f"📡 Notifying API..."
+            f"📦 Size: {size_str}"
         )
         
-        # Call API
-        api_success = await uploader.notify_api(filename, result_path)
+        # Call API if enabled
+        api_status = ""
+        if config.ENABLE_API_UPLOAD:
+            await status_msg.edit_text(status_msg.text + "\n\n📡 Notifying API...")
+            api_success = await uploader.notify_api(filename, result_path)
+            api_status = f"\n📡 API: {'✅ Sent' if api_success else '❌ Failed'}"
         
         status_text = (
             f"✅ **Task Completed**\n\n"
             f"📂 File: `{filename}`\n"
-            f"📦 Size: {size_str}\n"
-            f"📡 API: {'✅ Sent' if api_success else '❌ Failed'}"
+            f"📦 Size: {size_str}"
+            f"{api_status}"
         )
         await status_msg.edit_text(status_text)
 

@@ -64,9 +64,14 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
             stderr=asyncio.subprocess.PIPE
         )
 
-        # Updated Regex to be more flexible
-        # Captures: 25MiB/1.5GiB(1%) ... DL:3.2MiB/s ... ETA:7m50s
-        status_pattern = re.compile(r"([\d\.]+[KMG]?i?B)/([\d\.]+[KMG]?i?B)\((\d+)%\).*?DL:([\d\.]+[KMG]?i?B)/s.*?ETA:([a-zA-Z0-9:]+)")
+        # Updated Regex to be more permissive
+        # Matches: 1.5GiB/2.5GiB(60%) ... 3.2MiB/s
+        # Group 1: Downloaded
+        # Group 2: Total
+        # Group 3: Percent
+        # Group 4: Speed
+        # Group 5: ETA (Optional)
+        status_pattern = re.compile(r"([\d\.]+[KMG]?i?B)/([\d\.]+[KMG]?i?B)\((\d+)%\).*?DL:([\d\.]+[KMG]?i?B)/s(?:.*?ETA:([a-zA-Z0-9:]+))?")
 
         last_percent = -1
         last_update_time = 0
@@ -78,24 +83,18 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
             
             line = line_bytes.decode('utf-8', errors='ignore').strip()
             
-            # Skip empty lines
             if not line:
                 continue
 
-            # DEBUG: Print raw line to see what aria2c is outputting
-            # logger.info(f"RAW ARIA2: {line}") 
-
             match = status_pattern.search(line)
             if match and progress_callback:
-                downloaded_str = match.group(1)
-                total_str = match.group(2)
                 percent = int(match.group(3))
                 speed = match.group(4)
-                eta = match.group(5)
+                eta = match.group(5) or "?"
 
                 current_time = time.time()
-                # Update if percent changed OR if 5 seconds passed
-                if percent != last_percent or (current_time - last_update_time >= 5):
+                # Update if percent changed OR if 2 seconds passed (faster updates)
+                if percent != last_percent or (current_time - last_update_time >= 2):
                     try:
                         await progress_callback(
                             percent,   

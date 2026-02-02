@@ -37,15 +37,15 @@ async def process_upload_task(client, message, url):
     """
     Background task: Extract -> Download -> Notify.
     """
-    status_msg = await message.reply_text(f"⏳ Processing: {url}")
+    # Initial Status
+    status_msg = await message.reply_text(f"🔎 **Analyzing Link...**\n`{url}`")
     
     try:
         # 1. Extract
-        await status_msg.edit_text(f"🔍 Extracting URL...\n{url}")
         direct_url, headers, filename = await extractor.extract_direct_url(url)
         
         if not direct_url:
-            await status_msg.edit_text(f"❌ Extraction failed for: {url}")
+            await status_msg.edit_text(f"❌ **Extraction Failed**\nURL: `{url}`")
             return
 
         # 2. Setup Filename & Extension
@@ -53,79 +53,68 @@ async def process_upload_task(client, message, url):
             timestamp = int(time.time())
             filename = f"video_{timestamp}_{message.id}"
         
-        # Ensure extension exists
         if "." not in filename:
-            # Try to guess from URL or default to mp4
             if ".mkv" in direct_url: filename += ".mkv"
             elif ".avi" in direct_url: filename += ".avi"
             else: filename += ".mp4"
             
-        # Ensure filename is safe for filesystem
         filename = "".join([c for c in filename if c.isalnum() or c in "._- "]).strip()
         output_path = os.path.join(config.DOWNLOAD_PATH, filename)
         
+        # Update Status: Found
+        await status_msg.edit_text(f"✅ **File Found**\n📄 `{filename}`\n⬇️ Starting Download...")
+
         # 3. Download with Progress
         async def progress(current, total, speed, eta):
             try:
-                # If total is 100, it means aria2c sent us a percentage directly
-                if total == 100:
-                    percentage = current
-                    filled_length = int(percentage // 10)
-                    bar = '▓' * filled_length + '░' * (10 - filled_length)
-                    text = (
-                        f"⬇️ **Downloading (aria2c)**\n"
-                        f"{bar} {percentage}%\n"
-                        f"🚀 {speed} | ⏳ {eta}"
-                    )
-                else:
-                    # Legacy fallback
-                    total_str = downloader.format_size(total) if total > 0 else "?"
-                    current_str = downloader.format_size(current)
-                    text = (
-                        f"⬇️ **Downloading...**\n"
-                        f"{get_progress_bar(current, total)}\n"
-                        f"📦 {current_str} / {total_str}\n"
-                        f"🚀 {speed} | ⏳ {eta}"
-                    )
+                # current is percentage (0-100)
+                percentage = current
                 
+                # Simple Visual Bar
+                # [█████-----] 50%
+                filled = int(percentage // 10)
+                bar = '█' * filled + '-' * (10 - filled)
+                
+                text = (
+                    f"⬇️ **Downloading...**\n"
+                    f"`[{bar}]` **{percentage}%**\n\n"
+                    f"🚀 Speed: **{speed}**\n"
+                    f"⏳ ETA: **{eta}**\n"
+                    f"📄 `{filename}`"
+                )
+                
+                # Only edit if text changed (Pyrogram handles this check internally too)
                 await status_msg.edit_text(text)
             except Exception:
-                pass # Ignore edit errors
+                pass # Ignore flood wait errors during rapid updates
 
         result_path = await downloader.download_file(direct_url, headers, output_path, progress_callback=progress)
 
         if not result_path:
-            await status_msg.edit_text("❌ Download failed.")
+            await status_msg.edit_text(f"❌ **Download Failed**\nCheck logs for details.")
             return
 
-        # 4. Final Success Message & API Notification
+        # 4. Final Success
         file_size = os.path.getsize(result_path)
         size_str = downloader.format_size(file_size)
         
-        await status_msg.edit_text(
-            f"✅ **Download Complete!**\n\n"
-            f"📂 Saved to: `{result_path}`\n"
-            f"📦 Size: {size_str}"
+        final_text = (
+            f"✅ **Download Complete**\n\n"
+            f"📄 `{filename}`\n"
+            f"📦 Size: `{size_str}`"
         )
+        await status_msg.edit_text(final_text)
         
         # Call API if enabled
-        api_status = ""
         if config.ENABLE_API_UPLOAD:
-            await status_msg.edit_text(status_msg.text + "\n\n📡 Notifying API...")
+            await status_msg.edit_text(final_text + "\n\n📡 Notifying API...")
             api_success = await uploader.notify_api(filename, result_path)
-            api_status = f"\n📡 API: {'✅ Sent' if api_success else '❌ Failed'}"
-        
-        status_text = (
-            f"✅ **Task Completed**\n\n"
-            f"📂 File: `{filename}`\n"
-            f"📦 Size: {size_str}"
-            f"{api_status}"
-        )
-        await status_msg.edit_text(status_text)
+            api_status = "✅ Sent" if api_success else "❌ Failed"
+            await status_msg.edit_text(final_text + f"\n\n📡 API: {api_status}")
 
     except Exception as e:
         logger.error(f"Task failed: {e}")
-        await status_msg.edit_text(f"❌ Critical Error: {e}")
+        await status_msg.edit_text(f"❌ **Critical Error**\n`{str(e)}`")
         if 'output_path' in locals() and os.path.exists(output_path):
             os.remove(output_path)
 

@@ -7,7 +7,9 @@ API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+# Terabox Cookie
 TERABOX_NDUS = os.getenv("TERABOX_NDUS")
+TERABOX_ACCESS_TOKEN = os.getenv("TERABOX_ACCESS_TOKEN")
 DOWNLOAD_PATH = os.path.expanduser("~/files/output/")
 
 # API Uploader Config

@@ -106,6 +106,11 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
                 
                 direct_link = dlink_list[0].get("dlink")
                 if direct_link:
+                    # Append access_tokens as required by the docs
+                    if "access_tokens=" not in direct_link:
+                        separator = "&" if "?" in direct_link else "?"
+                        direct_link += f"{separator}access_tokens={config.TERABOX_ACCESS_TOKEN}"
+
                     # Update filename with info from this endpoint if available (sometimes more accurate)
                     if "file_info" in data and "filename" in data["file_info"]:
                         filename = data["file_info"]["filename"]

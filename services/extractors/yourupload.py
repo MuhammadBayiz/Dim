@@ -6,13 +6,19 @@ import socket
 async def extract(url: str) -> tuple[str | None, dict, str | None]:
     """
     Extracts the direct video URL from a YourUpload embed/page URL.
+    Supports both /embed/ and /watch/ URLs.
     
     Args:
-        url (str): The YourUpload URL (e.g., https://www.yourupload.com/embed/...)
+        url (str): The YourUpload URL.
         
     Returns:
         tuple: (direct_video_url, headers, filename)
     """
+    # Convert 'watch' URLs to 'embed' URLs directly
+    # https://www.yourupload.com/watch/ID -> https://www.yourupload.com/embed/ID
+    if "/watch/" in url:
+        url = url.replace("/watch/", "/embed/")
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         "Referer": "https://www.yourupload.com/"

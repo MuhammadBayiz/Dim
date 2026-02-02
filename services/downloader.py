@@ -24,12 +24,25 @@ def format_time(seconds):
     seconds = int(seconds % 60)
     return f"{minutes}m {seconds}s"
 
+def redact_url(url):
+    """Redacts sensitive query parameters from URL for logging."""
+    if not url: return url
+    # List of sensitive keys to redact
+    sensitive_keys = ["access_tokens", "ndus", "sekey", "sign"]
+    
+    for key in sensitive_keys:
+        # Regex to replace key=value with key=REDACTED
+        # Handles ?key=val and &key=val
+        url = re.sub(f"([?&]{key}=)([^&]+)", f"\\1REDACTED", url)
+    return url
+
 async def download_file(url: str, headers: dict, filename: str, progress_callback=None) -> str | None:
     """
     Downloads a file using aria2c for maximum speed (multi-connection).
     Parses aria2c console output for progress updates.
     """
-    logger.info(f"Starting aria2c download: {url} -> {filename}")
+    safe_url = redact_url(url)
+    logger.info(f"Starting aria2c download: {safe_url} -> {filename}")
     
     output_dir = os.path.dirname(filename)
     output_file = os.path.basename(filename)

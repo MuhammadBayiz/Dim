@@ -5,7 +5,7 @@ import time
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 import config
-from services import extractor, downloader, uploader, auth
+from services import extractor, downloader, uploader, auth, queue_manager
 
 # Configure logging
 logging.basicConfig(
@@ -14,8 +14,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global Task Registry: { user_id_message_id: asyncio.Task }
-TASKS = {}
+# Global Task Registry (Still used for cancellation if needed, but Queue manages execution)
+TASKS = {} 
 
 # Initialize the Bot
 if not config.BOT_TOKEN:
@@ -29,36 +29,31 @@ app = Client(
     bot_token=config.BOT_TOKEN
 )
 
-def get_progress_bar(current, total):
-    if total == 0:
-        return "Unknown size"
-    percentage = current * 100 / total
-    filled_length = int(percentage // 10) # 10 blocks for 100%
-    bar = '▓' * filled_length + '░' * (10 - filled_length)
-    return f"{bar} {percentage:.1f}%"
-
-async def process_upload_task(client, message, url):
+async def process_upload_task(client, message, url, status_msg):
     """
-    Background task: Extract -> Download -> Notify.
+    Worker task: Extract -> Download -> Notify.
     """
     task_id = f"{message.chat.id}_{message.id}"
     
+    # Register this active task for cancellation
+    current_task = asyncio.current_task()
+    TASKS[task_id] = current_task
+
     # Cancel Button
     cancel_btn = InlineKeyboardMarkup([
         [InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{task_id}")]
     ])
-
-    status_msg = await message.reply_text(f"🔎 **Analyzing Link...**\n`{url}`", reply_markup=cancel_btn)
     
     try:
         # 1. Extract
+        await status_msg.edit_text(f"🔍 **Extracting URL...**\n`{url}`", reply_markup=cancel_btn)
         direct_url, headers, filename = await extractor.extract_direct_url(url)
         
         if not direct_url:
             await status_msg.edit_text(f"❌ **Extraction Failed**\nURL: `{url}`")
             return
 
-        # 2. Setup Filename & Extension
+        # 2. Setup Filename
         if not filename:
             timestamp = int(time.time())
             filename = f"video_{timestamp}_{message.id}"
@@ -119,7 +114,6 @@ async def process_upload_task(client, message, url):
 
     except asyncio.CancelledError:
         await status_msg.edit_text("🛑 **Task Cancelled by User**")
-        # Cleanup is handled in downloader.py
     except Exception as e:
         logger.error(f"Task failed: {e}")
         await status_msg.edit_text(f"❌ **Critical Error**\n`{str(e)}`")
@@ -203,15 +197,14 @@ async def upload_handler(client, message):
 
     url = message.command[1]
     
-    # Create Task
-    task = asyncio.create_task(process_upload_task(client, message, url))
-    
-    # Register Task
-    task_id = f"{message.chat.id}_{message.id}"
-    TASKS[task_id] = task
-    
-    logger.info(f"Spawned download task for {url}")
+    # Add to Queue
+    await queue_manager.queue_manager.add(client, message, url)
+    logger.info(f"Added to queue: {url}")
 
 if __name__ == "__main__":
     print("Dim Userbot started...")
+    # Initialize Queue Workers
+    loop = asyncio.get_event_loop()
+    loop.create_task(queue_manager.queue_manager.start(process_upload_task))
+    
     app.run()

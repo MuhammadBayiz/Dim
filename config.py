@@ -18,6 +18,9 @@ API_SECRET = os.getenv("API_SECRET")
 API_URL = os.getenv("API_URL")
 ENABLE_API_UPLOAD = os.getenv("ENABLE_API_UPLOAD", "false").lower() == "true"
 
+# Queue Config
+MAX_CONCURRENT_DOWNLOADS = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "2"))
+
 # Validate required config
 if not all([API_ID, API_HASH, BOT_TOKEN, OWNER_ID]):
     print("Warning: API_ID, API_HASH, BOT_TOKEN or OWNER_ID are missing in .env")

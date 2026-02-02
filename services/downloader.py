@@ -69,262 +69,87 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
     for k, v in headers.items():
         cmd.extend(["--header", f"{k}: {v}"])
 
-        try:
+    try:
+        # Create subprocess
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
 
-            # Create subprocess
+        # Individual patterns for robust parsing
+        progress_pattern = re.compile(r"\((\d+)%\)")
+        speed_pattern = re.compile(r"DL:([0-9\.]+[KMG]?i?B(?:/s)?)")
+        eta_pattern = re.compile(r"ETA:([a-zA-Z0-9:]+)")
 
-            process = await asyncio.create_subprocess_exec(
+        last_percent = -1
+        last_update_time = 0
 
-                *cmd,
-
-                stdout=asyncio.subprocess.PIPE,
-
-                stderr=asyncio.subprocess.PIPE
-
-            )
-
-    
-
-                    # Individual patterns for robust parsing
-
-    
-
-                    progress_pattern = re.compile(r"\((\d+)%\)")
-
-    
-
-                    speed_pattern = re.compile(r"DL:([0-9\.]+[KMG]?i?B(?:/s)?)")
-
-    
-
-                    eta_pattern = re.compile(r"ETA:([a-zA-Z0-9:]+)")
-
-    
-
+        while True:
+            line_bytes = await process.stdout.readline()
+            if not line_bytes:
+                break
             
-
-    
-
-                    last_percent = -1
-
-    
-
-                    last_update_time = 0
-
-    
-
+            line = line_bytes.decode('utf-8', errors='ignore').strip()
             
-
-    
-
-                    while True:
-
-    
-
-                        line_bytes = await process.stdout.readline()
-
-    
-
-                        if not line_bytes:
-
-    
-
-                            break
-
-    
-
-                        
-
-    
-
-                        line = line_bytes.decode('utf-8', errors='ignore').strip()
-
-    
-
-                        if not line:
-
-    
-
-                            continue
-
-    
-
-            
-
-    
-
-                        # We look for lines starting with [#
-
-    
-
-                        if line.startswith("[#"):
-
-    
-
-                            match_p = progress_pattern.search(line)
-
-    
-
-                            
-
-    
-
-                            if match_p and progress_callback:
-
-    
-
-                                percent = int(match_p.group(1))
-
-    
-
-                                
-
-    
-
-                                # Optional extractions
-
-    
-
-                                match_s = speed_pattern.search(line)
-
-    
-
-                                match_e = eta_pattern.search(line)
-
-    
-
-                                
-
-    
-
-                                speed = match_s.group(1) if match_s else "?"
-
-    
-
-                                eta = match_e.group(1).rstrip("]") if match_e else "?"
-
-    
-
-            
-
-    
-
-                                current_time = time.time()
-
-    
-
-                                # Update if percent changed OR if 3 seconds passed
-
-    
-
-                                if percent != last_percent or (current_time - last_update_time >= 3):
-
-    
-
-                                    try:
-
-    
-
-                                        await progress_callback(
-
-    
-
-                                            percent,   
-
-    
-
-                                            100,       
-
-    
-
-                                            speed, 
-
-    
-
-                                            eta
-
-    
-
-                                        )
-
-    
-
-                                        last_percent = percent
-
-    
-
-                                        last_update_time = current_time
-
-    
-
-                                    except Exception as e:
-
-    
-
-                                        logger.error(f"Callback error: {e}")
-
-    
-
-            
-
-    
-
-            await process.wait()
-
-    
-
-            if process.returncode == 0:
-
-                logger.info(f"aria2c download complete: {filename}")
-
-                return filename
-
-            else:
-
-                stderr = await process.stderr.read()
-
-                logger.error(f"aria2c failed with code {process.returncode}: {stderr.decode()}")
-
-                return None
-
-    
-
-        except asyncio.CancelledError:
-
-            logger.warning(f"Download cancelled: {filename}")
-
-            if process:
-
-                process.terminate()
-
-                try:
-
-                    await process.wait() # Wait for it to die
-
-                except:
-
-                    pass
-
-            
-
-            # Clean up partial files
-
-            if os.path.exists(filename):
-
-                os.remove(filename)
-
-            if os.path.exists(filename + ".aria2"):
-
-                os.remove(filename + ".aria2")
-
-            raise # Re-raise to let main.py know
-
-    
-
-        except Exception as e:
-
-            logger.error(f"Error during aria2c download: {e}")
-
+            if not line:
+                continue
+
+            # We look for lines starting with [#
+            if line.startswith("[#"):
+                match_p = progress_pattern.search(line)
+                
+                if match_p and progress_callback:
+                    percent = int(match_p.group(1))
+                    
+                    # Optional extractions
+                    match_s = speed_pattern.search(line)
+                    match_e = eta_pattern.search(line)
+                    
+                    speed = match_s.group(1) if match_s else "?"
+                    eta = match_e.group(1).rstrip("]") if match_e else "?"
+
+                    current_time = time.time()
+                    # Update if percent changed OR if 3 seconds passed
+                    if percent != last_percent or (current_time - last_update_time >= 3):
+                        try:
+                            await progress_callback(
+                                percent,   
+                                100,       
+                                speed, 
+                                eta
+                            )
+                            last_percent = percent
+                            last_update_time = current_time
+                        except Exception as e:
+                            logger.error(f"Callback error: {e}")
+
+        await process.wait()
+
+        if process.returncode == 0:
+            logger.info(f"aria2c download complete: {filename}")
+            return filename
+        else:
+            stderr = await process.stderr.read()
+            logger.error(f"aria2c failed with code {process.returncode}: {stderr.decode()}")
             return None
 
-    
+    except asyncio.CancelledError:
+        logger.warning(f"Download cancelled: {filename}")
+        if process:
+            process.terminate()
+            try:
+                await process.wait() # Wait for it to die
+            except:
+                pass
+        
+        # Clean up partial files
+        if os.path.exists(filename):
+            os.remove(filename)
+        if os.path.exists(filename + ".aria2"):
+            os.remove(filename + ".aria2")
+        raise # Re-raise to let main.py know
+
+    except Exception as e:
+        logger.error(f"Error during aria2c download: {e}")
+        return None

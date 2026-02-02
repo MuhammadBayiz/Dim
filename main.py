@@ -3,6 +3,7 @@ import asyncio
 import logging
 import time
 from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 import config
 from services import extractor, downloader, uploader, auth
 
@@ -12,6 +13,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Global Task Registry: { user_id_message_id: asyncio.Task }
+TASKS = {}
 
 # Initialize the Bot
 if not config.BOT_TOKEN:
@@ -37,8 +41,14 @@ async def process_upload_task(client, message, url):
     """
     Background task: Extract -> Download -> Notify.
     """
-    # Initial Status
-    status_msg = await message.reply_text(f"🔎 **Analyzing Link...**\n`{url}`")
+    task_id = f"{message.chat.id}_{message.id}"
+    
+    # Cancel Button
+    cancel_btn = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{task_id}")]
+    ])
+
+    status_msg = await message.reply_text(f"🔎 **Analyzing Link...**\n`{url}`", reply_markup=cancel_btn)
     
     try:
         # 1. Extract
@@ -62,16 +72,12 @@ async def process_upload_task(client, message, url):
         output_path = os.path.join(config.DOWNLOAD_PATH, filename)
         
         # Update Status: Found
-        await status_msg.edit_text(f"✅ **File Found**\n📄 `{filename}`\n⬇️ Starting Download...")
+        await status_msg.edit_text(f"✅ **File Found**\n📄 `{filename}`\n⬇️ Starting Download...", reply_markup=cancel_btn)
 
         # 3. Download with Progress
         async def progress(current, total, speed, eta):
             try:
-                # current is percentage (0-100)
                 percentage = current
-                
-                # Simple Visual Bar
-                # [█████-----] 50%
                 filled = int(percentage // 10)
                 bar = '█' * filled + '-' * (10 - filled)
                 
@@ -82,11 +88,9 @@ async def process_upload_task(client, message, url):
                     f"⏳ ETA: **{eta}**\n"
                     f"📄 `{filename}`"
                 )
-                
-                # Only edit if text changed (Pyrogram handles this check internally too)
-                await status_msg.edit_text(text)
+                await status_msg.edit_text(text, reply_markup=cancel_btn)
             except Exception:
-                pass # Ignore flood wait errors during rapid updates
+                pass 
 
         result_path = await downloader.download_file(direct_url, headers, output_path, progress_callback=progress)
 
@@ -103,6 +107,7 @@ async def process_upload_task(client, message, url):
             f"📄 `{filename}`\n"
             f"📦 Size: `{size_str}`"
         )
+        # Remove cancel button on success
         await status_msg.edit_text(final_text)
         
         # Call API if enabled
@@ -112,11 +117,18 @@ async def process_upload_task(client, message, url):
             api_status = "✅ Sent" if api_success else "❌ Failed"
             await status_msg.edit_text(final_text + f"\n\n📡 API: {api_status}")
 
+    except asyncio.CancelledError:
+        await status_msg.edit_text("🛑 **Task Cancelled by User**")
+        # Cleanup is handled in downloader.py
     except Exception as e:
         logger.error(f"Task failed: {e}")
         await status_msg.edit_text(f"❌ **Critical Error**\n`{str(e)}`")
         if 'output_path' in locals() and os.path.exists(output_path):
             os.remove(output_path)
+    finally:
+        # Remove task from registry
+        if task_id in TASKS:
+            del TASKS[task_id]
 
 # --- Admin Commands ---
 
@@ -164,6 +176,18 @@ async def list_users_handler(client, message):
     else:
         await message.reply_text(f"📂 Allowed Users:\n" + "\n".join([f"- `{u}`" for u in users]))
 
+# --- Cancel Handler ---
+@app.on_callback_query(filters.regex(r"^cancel_"))
+async def cancel_handler(client, callback_query: CallbackQuery):
+    task_key = callback_query.data.split("cancel_")[1]
+    
+    if task_key in TASKS:
+        task = TASKS[task_key]
+        task.cancel() # Raises CancelledError in the task
+        await callback_query.answer("🛑 Task cancelling...")
+    else:
+        await callback_query.answer("⚠️ Task not found or already finished.", show_alert=True)
+
 # --- Upload Handler ---
 
 @app.on_message(filters.command("upload", prefixes="/"))
@@ -178,7 +202,14 @@ async def upload_handler(client, message):
         return
 
     url = message.command[1]
-    asyncio.create_task(process_upload_task(client, message, url))
+    
+    # Create Task
+    task = asyncio.create_task(process_upload_task(client, message, url))
+    
+    # Register Task
+    task_id = f"{message.chat.id}_{message.id}"
+    TASKS[task_id] = task
+    
     logger.info(f"Spawned download task for {url}")
 
 if __name__ == "__main__":

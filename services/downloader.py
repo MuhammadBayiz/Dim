@@ -69,68 +69,154 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
     for k, v in headers.items():
         cmd.extend(["--header", f"{k}: {v}"])
 
-    try:
-        # Create subprocess
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
+        try:
 
-        # Updated Regex to be more permissive
-        # Matches: 1.5GiB/2.5GiB(60%) ... 3.2MiB/s
-        # Group 1: Downloaded
-        # Group 2: Total
-        # Group 3: Percent
-        # Group 4: Speed
-        # Group 5: ETA (Optional)
-        status_pattern = re.compile(r"([\d\.]+[KMG]?i?B)/([\d\.]+[KMG]?i?B)\((\d+)%\).*?DL:([\d\.]+[KMG]?i?B)/s(?:.*?ETA:([a-zA-Z0-9:]+))?")
+            # Create subprocess
 
-        last_percent = -1
-        last_update_time = 0
+            process = await asyncio.create_subprocess_exec(
 
-        while True:
-            line_bytes = await process.stdout.readline()
-            if not line_bytes:
-                break
+                *cmd,
+
+                stdout=asyncio.subprocess.PIPE,
+
+                stderr=asyncio.subprocess.PIPE
+
+            )
+
+    
+
+            # Updated Regex to handle spaces in percentage
+
+            # Matches: 1.5GiB/2.5GiB( 60%) ... 3.2MiB/s
+
+            status_pattern = re.compile(r"([\d\.]+[KMG]?i?B)/([\d\.]+[KMG]?i?B)\(\s*(\d+)%\).*?DL:([\d\.]+[KMG]?i?B)/s(?:.*?ETA:([a-zA-Z0-9:]+))?")
+
+    
+
+            last_percent = -1
+
+            last_update_time = 0
+
+    
+
+            while True:
+
+                line_bytes = await process.stdout.readline()
+
+                if not line_bytes:
+
+                    break
+
+                
+
+                line = line_bytes.decode('utf-8', errors='ignore').strip()
+
+                
+
+                if not line:
+
+                    continue
+
+    
+
+                match = status_pattern.search(line)
+
+                if match and progress_callback:
+
+                    percent = int(match.group(3))
+
+                    speed = match.group(4)
+
+                    eta = match.group(5) or "?"
+
+    
+
+                    current_time = time.time()
+
+                    # Update if percent changed OR if 2 seconds passed
+
+                    if percent != last_percent or (current_time - last_update_time >= 2):
+
+                        try:
+
+                            await progress_callback(
+
+                                percent,   
+
+                                100,       
+
+                                speed + "/s", 
+
+                                eta
+
+                            )
+
+                            last_percent = percent
+
+                            last_update_time = current_time
+
+                        except Exception as e:
+
+                            logger.error(f"Callback error: {e}")
+
+    
+
+            await process.wait()
+
+    
+
+            if process.returncode == 0:
+
+                logger.info(f"aria2c download complete: {filename}")
+
+                return filename
+
+            else:
+
+                stderr = await process.stderr.read()
+
+                logger.error(f"aria2c failed with code {process.returncode}: {stderr.decode()}")
+
+                return None
+
+    
+
+        except asyncio.CancelledError:
+
+            logger.warning(f"Download cancelled: {filename}")
+
+            if process:
+
+                process.terminate()
+
+                try:
+
+                    await process.wait() # Wait for it to die
+
+                except:
+
+                    pass
+
             
-            line = line_bytes.decode('utf-8', errors='ignore').strip()
-            
-            if not line:
-                continue
 
-            match = status_pattern.search(line)
-            if match and progress_callback:
-                percent = int(match.group(3))
-                speed = match.group(4)
-                eta = match.group(5) or "?"
+            # Clean up partial files
 
-                current_time = time.time()
-                # Update if percent changed OR if 2 seconds passed (faster updates)
-                if percent != last_percent or (current_time - last_update_time >= 2):
-                    try:
-                        await progress_callback(
-                            percent,   
-                            100,       
-                            speed + "/s", 
-                            eta
-                        )
-                        last_percent = percent
-                        last_update_time = current_time
-                    except Exception as e:
-                        logger.error(f"Callback error: {e}")
+            if os.path.exists(filename):
 
-        await process.wait()
+                os.remove(filename)
 
-        if process.returncode == 0:
-            logger.info(f"aria2c download complete: {filename}")
-            return filename
-        else:
-            # Read any error output
-            stderr = await process.stderr.read()
-            logger.error(f"aria2c failed with code {process.returncode}: {stderr.decode()}")
+            if os.path.exists(filename + ".aria2"):
+
+                os.remove(filename + ".aria2")
+
+            raise # Re-raise to let main.py know
+
+    
+
+        except Exception as e:
+
+            logger.error(f"Error during aria2c download: {e}")
+
             return None
 
-    except Exception as e:
-        logger.error(f"Error during aria2c download: {e}")
-        return None
+    

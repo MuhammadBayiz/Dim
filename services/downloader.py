@@ -85,79 +85,187 @@ async def download_file(url: str, headers: dict, filename: str, progress_callbac
 
     
 
-            # Updated Regex to handle spaces in percentage
-
-            # Matches: 1.5GiB/2.5GiB( 60%) ... 3.2MiB/s
-
-            status_pattern = re.compile(r"([\d\.]+[KMG]?i?B)/([\d\.]+[KMG]?i?B)\(\s*(\d+)%\).*?DL:([\d\.]+[KMG]?i?B)/s(?:.*?ETA:([a-zA-Z0-9:]+))?")
+                    # Individual patterns for robust parsing
 
     
 
-            last_percent = -1
-
-            last_update_time = 0
+                    progress_pattern = re.compile(r"\((\d+)%\)")
 
     
 
-            while True:
-
-                line_bytes = await process.stdout.readline()
-
-                if not line_bytes:
-
-                    break
-
-                
-
-                line = line_bytes.decode('utf-8', errors='ignore').strip()
-
-                
-
-                if not line:
-
-                    continue
+                    speed_pattern = re.compile(r"DL:([0-9\.]+[KMG]?i?B(?:/s)?)")
 
     
 
-                match = status_pattern.search(line)
-
-                if match and progress_callback:
-
-                    percent = int(match.group(3))
-
-                    speed = match.group(4)
-
-                    eta = match.group(5) or "?"
+                    eta_pattern = re.compile(r"ETA:([a-zA-Z0-9:]+)")
 
     
 
-                    current_time = time.time()
+            
 
-                    # Update if percent changed OR if 2 seconds passed
+    
 
-                    if percent != last_percent or (current_time - last_update_time >= 2):
+                    last_percent = -1
 
-                        try:
+    
 
-                            await progress_callback(
+                    last_update_time = 0
 
-                                percent,   
+    
 
-                                100,       
+            
 
-                                speed + "/s", 
+    
 
-                                eta
+                    while True:
 
-                            )
+    
 
-                            last_percent = percent
+                        line_bytes = await process.stdout.readline()
 
-                            last_update_time = current_time
+    
 
-                        except Exception as e:
+                        if not line_bytes:
 
-                            logger.error(f"Callback error: {e}")
+    
+
+                            break
+
+    
+
+                        
+
+    
+
+                        line = line_bytes.decode('utf-8', errors='ignore').strip()
+
+    
+
+                        if not line:
+
+    
+
+                            continue
+
+    
+
+            
+
+    
+
+                        # We look for lines starting with [#
+
+    
+
+                        if line.startswith("[#"):
+
+    
+
+                            match_p = progress_pattern.search(line)
+
+    
+
+                            
+
+    
+
+                            if match_p and progress_callback:
+
+    
+
+                                percent = int(match_p.group(1))
+
+    
+
+                                
+
+    
+
+                                # Optional extractions
+
+    
+
+                                match_s = speed_pattern.search(line)
+
+    
+
+                                match_e = eta_pattern.search(line)
+
+    
+
+                                
+
+    
+
+                                speed = match_s.group(1) if match_s else "?"
+
+    
+
+                                eta = match_e.group(1).rstrip("]") if match_e else "?"
+
+    
+
+            
+
+    
+
+                                current_time = time.time()
+
+    
+
+                                # Update if percent changed OR if 3 seconds passed
+
+    
+
+                                if percent != last_percent or (current_time - last_update_time >= 3):
+
+    
+
+                                    try:
+
+    
+
+                                        await progress_callback(
+
+    
+
+                                            percent,   
+
+    
+
+                                            100,       
+
+    
+
+                                            speed, 
+
+    
+
+                                            eta
+
+    
+
+                                        )
+
+    
+
+                                        last_percent = percent
+
+    
+
+                                        last_update_time = current_time
+
+    
+
+                                    except Exception as e:
+
+    
+
+                                        logger.error(f"Callback error: {e}")
+
+    
+
+            
 
     
 

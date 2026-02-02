@@ -41,9 +41,9 @@ async def extract(url: str) -> tuple[str | None, dict, str | None]:
                 qs = parse_qs(parsed.query)
                 surl = qs.get("surl", [""])[0]
 
-            # Remove leading '1' if present (Terabox quirk: /s/1xxxx -> surl=xxxx)
-            if surl.startswith("1"):
-                surl = surl[1:]
+            # The OpenAPI shorturl parameter usually INCLUDES the leading '1'
+            # e.g. https://terabox.com/s/1ABC -> shorturl=1ABC
+            # So we DO NOT strip it.
             
             if not surl:
                 print(f"Terabox API: Could not extract surl from {url}")
